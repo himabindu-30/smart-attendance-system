@@ -1,102 +1,121 @@
-/* src/pages/Login.css */
 .login-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  padding: 40px;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f4f1ea; /* Exact beige from image */
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .login-box {
   background: white;
   padding: 40px;
   border-radius: 10px;
-  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
   width: 100%;
-  max-width: 400px;
+  max-width: 450px;
 }
 
 .login-box h1 {
-  color: #667eea;
-  font-size: 24px;
+  color: #2d2d2d; /* Dark text like "Classes" */
+  font-size: 32px;
   margin-bottom: 10px;
   text-align: center;
+  font-weight: 700;
 }
 
 .login-box h2 {
-  color: #333;
-  font-size: 20px;
-  margin-bottom: 30px;
+  color: #c4975f; /* Gold accent like "ACADEMIC MANAGEMENT" */
+  font-size: 12px;
+  margin-bottom: 40px;
   text-align: center;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 25px;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 5px;
-  color: #333;
+  margin-bottom: 8px;
+  color: #2d2d2d;
   font-weight: 500;
+  font-size: 14px;
 }
 
 .form-group input[type="email"],
 .form-group input[type="password"] {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  font-size: 14px;
+  padding: 14px;
+  border: 1.5px solid #e0ddd5;
+  border-radius: 6px;
+  font-size: 15px;
+  background: white;
+  transition: all 0.3s;
 }
 
 .form-group input[type="email"]:focus,
 .form-group input[type="password"]:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #c4975f;
+  box-shadow: 0 0 0 3px rgba(196, 151, 95, 0.1);
 }
 
 .form-group.checkbox {
   display: flex;
   align-items: center;
+  margin-bottom: 30px;
 }
 
 .form-group.checkbox input[type="checkbox"] {
-  width: auto;
-  margin-right: 8px;
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+  cursor: pointer;
+  accent-color: #c4975f;
 }
 
 .form-group.checkbox label {
   margin-bottom: 0;
-  font-weight: normal;
+  font-weight: 400;
+  font-size: 14px;
+  cursor: pointer;
+  color: #666;
 }
 
 .error-message {
-  background: #fee;
-  color: #c33;
-  padding: 10px;
-  border-radius: 5px;
-  margin-bottom: 15px;
+  background: #fff5f5;
+  color: #c53030;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
   font-size: 14px;
+  border-left: 3px solid #c53030;
 }
 
 button {
   width: 100%;
-  padding: 12px;
-  background: #667eea;
+  padding: 14px;
+  background: #2d2d2d; /* Black button like in image */
   color: white;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
+  transition: all 0.3s;
 }
 
 button:hover {
-  background: #5568d3;
+  background: #1a1a1a;
+  transform: translateY(-1px);
 }
 
 button:disabled {
-  background: #ccc;
+  background: #999;
   cursor: not-allowed;
+  transform: none;
 }

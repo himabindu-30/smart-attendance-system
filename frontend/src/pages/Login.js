@@ -1,4 +1,3 @@
-// src/pages/Login.js
 import React, { useState } from 'react';
 import axios from 'axios';
 import './Login.css';
@@ -14,7 +13,6 @@ function Login() {
     e.preventDefault();
     setError('');
 
-    // Simple validation
     if (!email || !password) {
       setError('Please fill in all fields');
       return;
@@ -33,18 +31,16 @@ function Login() {
         password: password
       });
 
-      // Store token
       localStorage.setItem('token', response.data.token);
       
       if (rememberMe) {
         localStorage.setItem('rememberMe', 'true');
       }
 
-      // Redirect to dashboard
       window.location.href = '/dashboard';
 
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setError(err.response?.data?.error || 'Login failed. Please try again.');
       setLoading(false);
     }
   };
@@ -52,12 +48,15 @@ function Login() {
   return (
     <div className="login-container">
       <div className="login-box">
-        <h1>Smart Attendance System</h1>
-        <h2>Login</h2>
+        <div className="login-header">
+          <div className="login-header-top">ACADEMIC MANAGEMENT</div>
+          <h1>Welcome Back</h1>
+          <h2>Sign in to continue</h2>
+        </div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email:</label>
+            <label>Email</label>
             <input
               type="email"
               value={email}
@@ -67,7 +66,7 @@ function Login() {
           </div>
 
           <div className="form-group">
-            <label>Password:</label>
+            <label>Password</label>
             <input
               type="password"
               value={password}
@@ -83,13 +82,13 @@ function Login() {
               onChange={(e) => setRememberMe(e.target.checked)}
               id="remember"
             />
-            <label htmlFor="remember">Remember Me</label>
+            <label htmlFor="remember">Remember me</label>
           </div>
 
           {error && <div className="error-message">{error}</div>}
 
           <button type="submit" disabled={loading}>
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
       </div>

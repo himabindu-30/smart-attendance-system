@@ -46,6 +46,30 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route 
+            path="/classes" 
+            element={
+              <PrivateRoute>
+                <ClassList />
+              </PrivateRoute>
+            } 
+          />
+        <Route 
+            path="/classes/:id/enroll" 
+            element={
+              <PrivateRoute>
+                <EnrollStudents />
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/classes/new" 
+            element={
+              <PrivateRoute>
+                <CreateClass />
+              </PrivateRoute>
+            } 
+          />
         {/* Public route */}
         <Route path="/login" element={<Login />} />
 
