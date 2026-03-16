@@ -1,179 +1,83 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const db = require("../config/db");
-const auth = require("../middleware/auth");
+const db = require('../config/db');
+const auth = require('../middleware/auth');
 
-/*
-========================================
-Simple In-Memory Cache (5 min)
-========================================
-*/
-const cache = {};
-
-function setCache(key, data) {
-  cache[key] = {
-    data,
-    expiry: Date.now() + 5 * 60 * 1000,
-  };
-}
-
-function getCache(key) {
-  const item = cache[key];
-  if (!item) return null;
-  if (Date.now() > item.expiry) {
-    delete cache[key];
-    return null;
-  }
-  return item.data;
-}
-
-/*
-========================================
-GET DASHBOARD STATS
-========================================
-*/
-router.get("/stats", auth, async (req, res) => {
+router.get('/stats', auth, async (req, res) => {
   try {
-    const cached = getCache("stats");
-    if (cached) return res.json(cached);
-
-    const [[students]] = await db.query(
-      `SELECT COUNT(*) AS total_students FROM students`
-    );
-
-    const [[classes]] = await db.query(
-      `SELECT COUNT(*) AS total_classes FROM classes`
-    );
-
-    const [[sessions]] = await db.query(
-      `
-      SELECT COUNT(DISTINCT date) AS todays_sessions
-      FROM attendance
-      WHERE DATE(date) = CURDATE()
-      `
-    );
-
-    const [[avg]] = await db.query(
-      `
-      SELECT 
-      ROUND(SUM(status='present') / COUNT(*) * 100, 2) 
-      AS average_attendance
-      FROM attendance
-      `
-    );
-
-    const result = {
-      total_students: students.total_students,
-      total_classes: classes.total_classes,
-      todays_sessions: sessions.todays_sessions,
-      average_attendance: avg.average_attendance || 0,
-    };
-
-    setCache("stats", result);
-
-    res.json(result);
+    const [s, c, sess, avg] = await Promise.all([
+      db.query('SELECT COUNT(*) AS total FROM students'),
+      db.query('SELECT COUNT(*) AS total FROM classes'),
+      db.query("SELECT COUNT(DISTINCT session_id) AS total FROM attendance_sessions WHERE session_date = CURRENT_DATE"),
+      db.query("SELECT ROUND(SUM(CASE WHEN status='PRESENT' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 2) AS avg FROM attendance"),
+    ]);
+    res.json({
+      total_students: parseInt(s.rows[0].total),
+      total_classes: parseInt(c.rows[0].total),
+      todays_sessions: parseInt(sess.rows[0].total),
+      average_attendance: parseFloat(avg.rows[0].avg) || 0,
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to load stats" });
+    res.status(500).json({ error: 'Failed to load stats' });
   }
 });
 
-/*
-========================================
-MONTHLY TREND (LAST 6 MONTHS)
-========================================
-*/
-router.get("/monthly-trend", auth, async (req, res) => {
+router.get('/monthly-trend', auth, async (req, res) => {
   try {
-    const cached = getCache("monthly");
-    if (cached) return res.json(cached);
-
-    const [rows] = await db.query(
-      `
-      SELECT 
-        DATE_FORMAT(date,'%b') AS month,
-        ROUND(SUM(status='present')/COUNT(*)*100,2) AS percentage
-      FROM attendance
-      WHERE date >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-      GROUP BY YEAR(date), MONTH(date)
-      ORDER BY YEAR(date), MONTH(date)
-      `
-    );
-
-    setCache("monthly", rows);
-
+    const { rows } = await db.query(`
+      SELECT TO_CHAR(asess.session_date, 'Mon') AS month,
+             ROUND(SUM(CASE WHEN a.status='PRESENT' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 2) AS percentage
+      FROM attendance a
+      JOIN attendance_sessions asess ON asess.session_id = a.session_id
+      WHERE asess.session_date >= CURRENT_DATE - INTERVAL '6 months'
+      GROUP BY TO_CHAR(asess.session_date, 'YYYY-MM'), TO_CHAR(asess.session_date, 'Mon')
+      ORDER BY TO_CHAR(asess.session_date, 'YYYY-MM')
+    `);
     res.json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Monthly trend error" });
+    res.status(500).json({ error: 'Monthly trend error' });
   }
 });
 
-/*
-========================================
-SUBJECT WISE ATTENDANCE
-========================================
-*/
-router.get("/subject-wise", auth, async (req, res) => {
+router.get('/subject-wise', auth, async (req, res) => {
   try {
-    const cached = getCache("subject");
-    if (cached) return res.json(cached);
-
-    const [rows] = await db.query(
-      `
-      SELECT 
-        sub.name AS subject,
-        ROUND(SUM(a.status='present')/COUNT(*)*100,2) AS percentage
+    const { rows } = await db.query(`
+      SELECT c.subject_name AS subject,
+             ROUND(SUM(CASE WHEN a.status='PRESENT' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 2) AS percentage
       FROM attendance a
-      JOIN subjects sub ON sub.id = a.subject_id
-      GROUP BY a.subject_id
+      JOIN attendance_sessions asess ON asess.session_id = a.session_id
+      JOIN classes c ON c.class_id = asess.class_id
+      GROUP BY c.class_id, c.subject_name
       ORDER BY percentage DESC
-      `
-    );
-
-    setCache("subject", rows);
-
+    `);
     res.json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Subject analytics error" });
+    res.status(500).json({ error: 'Subject analytics error' });
   }
 });
 
-/*
-========================================
-RECENT SESSIONS
-========================================
-*/
-router.get("/recent-sessions", auth, async (req, res) => {
+router.get('/recent-sessions', auth, async (req, res) => {
   try {
-    const cached = getCache("recent");
-    if (cached) return res.json(cached);
-
-    const [rows] = await db.query(
-      `
-      SELECT 
-        a.date,
-        c.name AS class_name,
-        f.name AS faculty_name,
-        SUM(a.status='present') AS present_count,
-        SUM(a.status='absent') AS absent_count,
-        ROUND(SUM(a.status='present')/COUNT(*)*100,2) AS percentage
+    const { rows } = await db.query(`
+      SELECT asess.session_date AS date,
+             c.subject_name AS class_name,
+             u.name AS faculty_name,
+             SUM(CASE WHEN a.status='PRESENT' THEN 1 ELSE 0 END) AS present_count,
+             SUM(CASE WHEN a.status='ABSENT' THEN 1 ELSE 0 END) AS absent_count,
+             ROUND(SUM(CASE WHEN a.status='PRESENT' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*),0), 2) AS percentage
       FROM attendance a
-      JOIN classes c ON c.id = a.class_id
-      JOIN faculty f ON f.id = c.faculty_id
-      GROUP BY a.date, a.class_id
-      ORDER BY a.date DESC
+      JOIN attendance_sessions asess ON asess.session_id = a.session_id
+      JOIN classes c ON c.class_id = asess.class_id
+      JOIN faculty f ON f.faculty_id = c.faculty_id
+      JOIN users u ON u.user_id = f.user_id
+      GROUP BY asess.session_id, asess.session_date, c.subject_name, u.name
+      ORDER BY asess.session_date DESC
       LIMIT 10
-      `
-    );
-
-    setCache("recent", rows);
-
+    `);
     res.json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Recent sessions error" });
+    res.status(500).json({ error: 'Recent sessions error' });
   }
 });
 

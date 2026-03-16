@@ -35,20 +35,3 @@ body {
   margin-bottom: 30px;
 }
 
-.dashboard button {
-  margin-top: 20px;
-  padding: 12px 24px;
-  background: #2d2d2d;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 16px;
-  font-weight: 600;
-  transition: all 0.3s;
-}
-
-.dashboard button:hover {
-  background: #1a1a1a;
-  transform: translateY(-1px);
-}

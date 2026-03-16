@@ -1,237 +1,150 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import face_recognition
 import numpy as np
-import logging
 import json
+import logging
+import tempfile
+import os
 
-# -------------------------------
-# App Initialization
-# -------------------------------
+from deepface import DeepFace
+
 app = Flask(__name__)
 CORS(app)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-MATCH_THRESHOLD = 0.6
-MAX_FACES_ALLOWED = 50
+MODEL      = "Facenet"          # fast + accurate; swap to "ArcFace" for higher accuracy
+BACKEND    = "opencv"           # detector: opencv | retinaface | mtcnn
+THRESHOLD  = 0.40               # cosine distance threshold (lower = stricter)
 
 
-# -------------------------------
-# Health Check
-# -------------------------------
+def save_temp(file_storage):
+    """Save uploaded FileStorage to a temp file and return its path."""
+    suffix = os.path.splitext(file_storage.filename or "img.jpg")[1] or ".jpg"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    file_storage.save(tmp.name)
+    return tmp.name
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({
-        "status": "ML service running"
-    })
+    return jsonify({"status": "ML service running", "model": MODEL})
 
 
-# -------------------------------
-# Detect Faces API
-# -------------------------------
-@app.route("/detect-faces", methods=["POST"])
-def detect_faces():
-    try:
-        if "photo" not in request.files:
-            return jsonify({
-                "success": False,
-                "message": "No image uploaded"
-            }), 400
-
-        file = request.files["photo"]
-
-        image = face_recognition.load_image_file(file)
-
-        face_locations = face_recognition.face_locations(image)
-
-        faces = []
-        for (top, right, bottom, left) in face_locations:
-            faces.append({
-                "top": top,
-                "right": right,
-                "bottom": bottom,
-                "left": left
-            })
-
-        return jsonify({
-            "success": True,
-            "face_count": len(face_locations),
-            "faces": faces
-        })
-
-    except Exception as e:
-        logging.exception("Detect faces error")
-        return jsonify({
-            "success": False,
-            "message": "Face detection failed",
-            "error": str(e)
-        }), 500
-
-
-# -------------------------------
-# Encode Face API
-# -------------------------------
+# ── Encode single face ────────────────────────────────────────────────────────
 @app.route("/encode-face", methods=["POST"])
 def encode_face():
+    if "photo" not in request.files:
+        return jsonify({"success": False, "message": "No photo uploaded"}), 400
+
+    path = save_temp(request.files["photo"])
     try:
-        if "photo" not in request.files:
-            return jsonify({
-                "success": False,
-                "message": "No photo uploaded"
-            }), 400
-
-        file = request.files["photo"]
-
-        image = face_recognition.load_image_file(file)
-
-        face_locations = face_recognition.face_locations(image)
-
-        if len(face_locations) == 0:
-            return jsonify({
-                "success": False,
-                "message": "No face detected"
-            }), 400
-
-        if len(face_locations) > 1:
-            return jsonify({
-                "success": False,
-                "message": "Multiple faces detected"
-            }), 400
-
-        encodings = face_recognition.face_encodings(
-            image,
-            face_locations
+        result = DeepFace.represent(
+            img_path=path,
+            model_name=MODEL,
+            detector_backend=BACKEND,
+            enforce_detection=True
         )
+        # DeepFace returns a list; expect exactly one face
+        if len(result) == 0:
+            return jsonify({"success": False, "message": "No face detected"}), 400
+        if len(result) > 1:
+            return jsonify({"success": False, "message": "Multiple faces detected — use a solo photo"}), 400
 
-        encoding_list = encodings[0].tolist()
+        encoding = result[0]["embedding"]
+        return jsonify({"success": True, "encoding": encoding})
 
-        return jsonify({
-            "success": True,
-            "encoding": encoding_list
-        })
-
+    except ValueError as e:
+        return jsonify({"success": False, "message": "No face detected"}), 400
     except Exception as e:
-        logging.exception("Encoding error")
-        return jsonify({
-            "success": False,
-            "message": "Face encoding failed",
-            "error": str(e)
-        }), 500
+        logging.exception("Encode error")
+        return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        os.unlink(path)
 
 
-# -------------------------------
-# Match Faces API
-# -------------------------------
+# ── Match faces in classroom photo ───────────────────────────────────────────
 @app.route("/match-faces", methods=["POST"])
 def match_faces():
+    if "photo" not in request.files:
+        return jsonify({"success": False, "message": "Photo required"}), 400
+
+    students_json = request.form.get("enrolled_students")
+    if not students_json:
+        return jsonify({"success": False, "message": "enrolled_students required"}), 400
+
+    enrolled = json.loads(students_json)
+    if not enrolled:
+        return jsonify({"success": True, "matches": [], "detected_count": 0}), 200
+
+    path = save_temp(request.files["photo"])
     try:
-        logging.info("Match faces request")
-
-        if "photo" not in request.files:
-            return jsonify({
-                "success": False,
-                "message": "Photo required"
-            }), 400
-
-        students_json = request.form.get("enrolled_students")
-
-        if not students_json:
-            return jsonify({
-                "success": False,
-                "message": "Enrolled students data required"
-            }), 400
-
-        enrolled_students = json.loads(students_json)
-
-        image = face_recognition.load_image_file(
-            request.files["photo"]
+        # Get embeddings for every face in the classroom photo
+        detected = DeepFace.represent(
+            img_path=path,
+            model_name=MODEL,
+            detector_backend=BACKEND,
+            enforce_detection=False   # don't crash if 0 faces
         )
 
-        face_locations = face_recognition.face_locations(image)
+        if not detected:
+            return jsonify({"success": False, "message": "No faces detected in photo"}), 400
 
-        detected_count = len(face_locations)
+        detected_count = len(detected)
+        detected_embeddings = [np.array(d["embedding"]) for d in detected]
 
-        if detected_count == 0:
-            return jsonify({
-                "success": False,
-                "message": "No faces detected"
-            }), 400
-
-        if detected_count > MAX_FACES_ALLOWED:
-            return jsonify({
-                "success": False,
-                "message": "Too many faces"
-            }), 400
-
-        detected_encodings = face_recognition.face_encodings(
-            image,
-            face_locations
-        )
-
-        known_encodings = []
-        known_students = []
-
-        for s in enrolled_students:
-            if "encoding" in s:
-                known_encodings.append(
-                    np.array(s["encoding"])
-                )
-                known_students.append(s)
+        # Build known embeddings list
+        known = []
+        for s in enrolled:
+            if "encoding" in s and s["encoding"]:
+                known.append({
+                    "student_id": s["student_id"],
+                    "name": s["name"],
+                    "vec": np.array(s["encoding"])
+                })
 
         matches = []
         matched_ids = set()
 
-        for enc in detected_encodings:
+        for det_vec in detected_embeddings:
+            best_dist = float("inf")
+            best_student = None
 
-            distances = face_recognition.face_distance(
-                known_encodings,
-                enc
-            )
+            for k in known:
+                if k["student_id"] in matched_ids:
+                    continue
+                # Cosine distance
+                a, b = det_vec, k["vec"]
+                cos_dist = 1 - np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-10)
+                if cos_dist < best_dist:
+                    best_dist = cos_dist
+                    best_student = k
 
-            if len(distances) == 0:
-                continue
-
-            best_index = np.argmin(distances)
-            best_distance = distances[best_index]
-
-            if best_distance < MATCH_THRESHOLD:
-                student = known_students[best_index]
-
-                confidence = float(1 - best_distance)
-
+            if best_student and best_dist < THRESHOLD:
+                confidence = round(float(1 - best_dist), 3)
                 matches.append({
-                    "student_id": student["student_id"],
-                    "name": student["name"],
-                    "confidence": round(confidence, 3)
+                    "student_id": best_student["student_id"],
+                    "name": best_student["name"],
+                    "confidence": confidence
                 })
-
-                matched_ids.add(student["student_id"])
-
-        unmatched_faces = detected_count - len(matches)
+                matched_ids.add(best_student["student_id"])
 
         return jsonify({
             "success": True,
             "detected_count": detected_count,
             "matches": matches,
-            "unmatched_faces": unmatched_faces
+            "unmatched_faces": detected_count - len(matches)
         })
 
     except Exception as e:
-        logging.exception("Matching error")
-        return jsonify({
-            "success": False,
-            "message": "Face matching failed",
-            "error": str(e)
-        }), 500
+        logging.exception("Match error")
+        return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        os.unlink(path)
 
 
-# -------------------------------
-# Run Server
-# -------------------------------
 if __name__ == "__main__":
-    print("🤖 ML Service Running on 5001")
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    port = int(os.environ.get("PORT", 5001))
+    print(f"🤖 ML Service (DeepFace) running on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

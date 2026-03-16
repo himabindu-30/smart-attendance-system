@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../api';
 
 const ClassList = () => {
   const navigate = useNavigate();
@@ -8,15 +9,15 @@ const ClassList = () => {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    fetch('/api/classes')
+    api('/api/classes')
       .then(res => res.json())
-      .then(data => { setClasses(data); setLoading(false); })
+      .then(data => { setClasses(data.classes || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
   const filtered = classes.filter(c =>
-    c.subject?.toLowerCase().includes(search.toLowerCase()) ||
-    c.faculty?.toLowerCase().includes(search.toLowerCase()) ||
+    c.subject_name?.toLowerCase().includes(search.toLowerCase()) ||
+    c.faculty_name?.toLowerCase().includes(search.toLowerCase()) ||
     c.section?.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -68,11 +69,11 @@ const ClassList = () => {
               </thead>
               <tbody>
                 {filtered.map((cls, i) => (
-                  <tr key={cls.id} style={{ ...styles.tr, animationDelay: `${i * 40}ms` }}>
+                  <tr key={cls.class_id} style={{ ...styles.tr, animationDelay: `${i * 40}ms` }}>
                     <td style={styles.td}>
-                      <span style={styles.subjectBadge}>{cls.subject}</span>
+                      <span style={styles.subjectBadge}>{cls.subject_name}</span>
                     </td>
-                    <td style={styles.td}>{cls.faculty}</td>
+                    <td style={styles.td}>{cls.faculty_name}</td>
                     <td style={styles.td}>
                       <span style={styles.sectionTag}>{cls.section}</span>
                     </td>
@@ -83,14 +84,20 @@ const ClassList = () => {
                     <td style={styles.td}>
                       <div style={styles.actions}>
                         <button
+                          style={{ ...styles.actionBtn, background: '#16a34a' }}
+                          onClick={() => navigate(`/classes/${cls.class_id}/attendance`)}
+                        >
+                          ✓ Attendance
+                        </button>
+                        <button
                           style={styles.actionBtn}
-                          onClick={() => navigate(`/classes/${cls.id}/enroll`)}
+                          onClick={() => navigate(`/classes/${cls.class_id}/enroll`)}
                         >
                           Enroll
                         </button>
                         <button
                           style={{ ...styles.actionBtn, ...styles.ghostBtn }}
-                          onClick={() => navigate(`/classes/${cls.id}`)}
+                          onClick={() => navigate(`/classes/${cls.class_id}`)}
                         >
                           View
                         </button>

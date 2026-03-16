@@ -1,240 +1,97 @@
-const PDFDocument = require("pdfkit");
-const ExcelJS = require("exceljs");
+const express = require('express');
+const router = express.Router();
+const PDFDocument = require('pdfkit');
+const ExcelJS = require('exceljs');
+const db = require('../config/db');
+const auth = require('../middleware/auth');
 
-/*
-=====================================================
-GET EXPORT PDF
-=====================================================
-*/
-router.get("/export/pdf/:report_id", async (req, res) => {
+function buildQuery(base, { class_id, start_date, end_date }) {
+  const params = [];
+  let q = base + ' WHERE 1=1';
+  if (class_id)   { params.push(class_id);   q += ` AND asess.class_id = $${params.length}`; }
+  if (start_date) { params.push(start_date); q += ` AND asess.session_date >= $${params.length}`; }
+  if (end_date)   { params.push(end_date);   q += ` AND asess.session_date <= $${params.length}`; }
+  q += ' ORDER BY asess.session_date DESC';
+  return { q, params };
+}
+
+const BASE = `
+  SELECT u.name AS student_name, s.roll_number, c.subject_name,
+         asess.session_date, a.status, a.confidence
+  FROM attendance a
+  JOIN attendance_sessions asess ON asess.session_id = a.session_id
+  JOIN students s ON s.student_id = a.student_id
+  JOIN users u ON u.user_id = s.user_id
+  JOIN classes c ON c.class_id = asess.class_id`;
+
+router.get('/', auth, async (req, res) => {
   try {
-    const reportId = req.params.report_id;
-
-    // Example: fetch report from session cache
-    const report = req.session?.reports?.[reportId];
-
-    if (!report) {
-      return res.status(404).json({ error: "Report not found" });
-    }
-
-    const doc = new PDFDocument({ margin: 40 });
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=attendance-report-${reportId}.pdf`
-    );
-
-    doc.pipe(res);
-
-    /*
-    ===========================
-    HEADER
-    ===========================
-    */
-    doc
-      .fontSize(20)
-      .text("SMART ATTENDANCE SYSTEM", { align: "center" });
-
-    doc.moveDown();
-
-    doc
-      .fontSize(16)
-      .text(report.title || "Attendance Report", {
-        align: "center",
-      });
-
-    doc
-      .fontSize(10)
-      .text(`Generated on: ${new Date().toLocaleString()}`, {
-        align: "right",
-      });
-
-    doc.moveDown();
-
-    /*
-    ===========================
-    SUMMARY
-    ===========================
-    */
-    if (report.summary) {
-      doc.fontSize(12).text("Summary", { underline: true });
-
-      Object.entries(report.summary).forEach(([key, value]) => {
-        doc.text(`${key}: ${value}`);
-      });
-
-      doc.moveDown();
-    }
-
-    /*
-    ===========================
-    TABLE
-    ===========================
-    */
-    const tableTop = doc.y;
-    const itemHeight = 20;
-
-    const headers = report.headers || [
-      "Date",
-      "Student",
-      "Subject",
-      "Status",
-    ];
-
-    headers.forEach((h, i) => {
-      doc.text(h, 50 + i * 120, tableTop);
-    });
-
-    let y = tableTop + itemHeight;
-
-    report.records.forEach((row) => {
-      doc.text(row.date, 50, y);
-      doc.text(row.student || "-", 170, y);
-      doc.text(row.subject || "-", 290, y);
-      doc.text(row.status || "-", 410, y);
-      y += itemHeight;
-    });
-
-    /*
-    ===========================
-    FOOTER
-    ===========================
-    */
-    doc.moveDown();
-    doc.text(
-      `Report generated at ${new Date().toLocaleTimeString()}`,
-      {
-        align: "center",
-      }
-    );
-
-    doc.end();
+    const { q, params } = buildQuery(BASE, req.query);
+    const { rows } = await db.query(q, params);
+    res.json({ success: true, records: rows });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "PDF generation failed" });
+    res.status(500).json({ error: 'Failed to fetch report' });
   }
 });
 
-/*
-=====================================================
-GET EXPORT EXCEL
-=====================================================
-*/
-router.get("/export/excel/:report_id", async (req, res) => {
+router.get('/export/pdf', auth, async (req, res) => {
   try {
-    const reportId = req.params.report_id;
+    const { q, params } = buildQuery(BASE, req.query);
+    const { rows: records } = await db.query(q, params);
 
-    const report = req.session?.reports?.[reportId];
+    const doc = new PDFDocument({ margin: 40 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=attendance-report.pdf');
+    doc.pipe(res);
+    doc.fontSize(18).text('Smart Attendance System', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).text(`Generated: ${new Date().toLocaleString()}`, { align: 'right' });
+    doc.moveDown();
+    const top = doc.y;
+    ['Date', 'Student', 'Roll No', 'Subject', 'Status'].forEach((h, i) =>
+      doc.text(h, 40 + i * 105, top, { width: 100, underline: true })
+    );
+    let y = top + 20;
+    records.forEach(r => {
+      doc.text(String(r.session_date).slice(0, 10), 40,  y, { width: 100 });
+      doc.text(r.student_name || '-',               145, y, { width: 100 });
+      doc.text(r.roll_number  || '-',               250, y, { width: 100 });
+      doc.text(r.subject_name || '-',               355, y, { width: 100 });
+      doc.text(r.status       || '-',               460, y, { width: 80  });
+      y += 20;
+      if (y > 720) { doc.addPage(); y = 40; }
+    });
+    doc.end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'PDF generation failed' });
+  }
+});
 
-    if (!report) {
-      return res.status(404).json({ error: "Report not found" });
-    }
+router.get('/export/excel', auth, async (req, res) => {
+  try {
+    const { q, params } = buildQuery(BASE, req.query);
+    const { rows } = await db.query(q, params);
 
     const workbook = new ExcelJS.Workbook();
-
-    /*
-    ===========================
-    SUMMARY SHEET
-    ===========================
-    */
-    const summarySheet = workbook.addWorksheet("Summary");
-
-    summarySheet.addRow(["Report Title", report.title]);
-    summarySheet.addRow([
-      "Generated",
-      new Date().toLocaleString(),
-    ]);
-
-    summarySheet.addRow([]);
-
-    if (report.summary) {
-      Object.entries(report.summary).forEach(([k, v]) => {
-        summarySheet.addRow([k, v]);
-      });
-    }
-
-    summarySheet.getColumn(1).font = { bold: true };
-
-    /*
-    ===========================
-    DETAILS SHEET
-    ===========================
-    */
-    const sheet = workbook.addWorksheet("Detailed Data");
-
-    const headers = report.headers || [
-      "Date",
-      "Student",
-      "Subject",
-      "Status",
-      "Attendance %",
-    ];
-
-    const headerRow = sheet.addRow(headers);
-
-    headerRow.font = { bold: true };
-    headerRow.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFDDEEFF" },
-    };
-
-    report.records.forEach((r) => {
-      const row = sheet.addRow([
-        r.date,
-        r.student,
-        r.subject,
-        r.status,
-        r.percentage,
-      ]);
-
-      // color low attendance
-      if (r.percentage && r.percentage < 75) {
-        row.getCell(5).fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFFCCCC" },
-        };
-      }
-    });
-
-    // totals formula
-    const totalRow = sheet.addRow([
-      "",
-      "",
-      "",
-      "Average",
-      {
-        formula: `AVERAGE(E2:E${sheet.rowCount})`,
-      },
-    ]);
-
-    totalRow.font = { bold: true };
-
-    sheet.columns.forEach((col) => {
-      col.width = 20;
-    });
-
-    /*
-    ===========================
-    RESPONSE HEADERS
-    ===========================
-    */
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    );
-
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=attendance-report-${reportId}.xlsx`
-    );
-
+    const sheet = workbook.addWorksheet('Attendance');
+    const header = sheet.addRow(['Date', 'Student', 'Roll No', 'Subject', 'Status', 'Confidence']);
+    header.font = { bold: true };
+    header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEEFF' } };
+    rows.forEach(r => sheet.addRow([
+      String(r.session_date).slice(0, 10),
+      r.student_name, r.roll_number, r.subject_name, r.status, r.confidence
+    ]));
+    sheet.columns.forEach(col => { col.width = 20; });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=attendance-report.xlsx');
     await workbook.xlsx.write(res);
     res.end();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Excel generation failed" });
+    res.status(500).json({ error: 'Excel generation failed' });
   }
 });
+
+module.exports = router;

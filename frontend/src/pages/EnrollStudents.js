@@ -1,54 +1,51 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../api';
 import './EnrollStudents.css';
 
 function EnrollStudents() {
-  const { id } = useParams(); // Get class_id from URL
+  const { id } = useParams();
   const navigate = useNavigate();
-  
-  const [classInfo, setClassInfo] = useState(null);
+
   const [enrolledStudents, setEnrolledStudents] = useState([]);
-  const [availableStudents, setAvailableStudents] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const token = localStorage.getItem('token');
+  const headers = { Authorization: `Bearer ${token}` };
+
   useEffect(() => {
     fetchData();
-  }, [id]);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchData = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const headers = { Authorization: `Bearer ${token}` };
-
-      // Fetch class info
-      const classRes = await axios.get(`http://localhost:5000/api/classes/${id}`, { headers });
-      setClassInfo(classRes.data.class);
-
-      // Fetch enrolled students
-      const enrolledRes = await axios.get(`http://localhost:5000/api/classes/${id}/students`, { headers });
-      setEnrolledStudents(enrolledRes.data.students || []);
-
-      // Fetch available students
-      const availableRes = await axios.get(`http://localhost:5000/api/classes/${id}/available-students`, { headers });
-      setAvailableStudents(availableRes.data.students || []);
-
-      setLoading(false);
+      setLoading(true);
+      const [enrolledRes, allRes] = await Promise.all([
+        api(`/api/enrollments/${id}`),
+        api(`/api/students`),
+      ]);
+      const enrolledData = await enrolledRes.json();
+      const allData = await allRes.json();
+      const enrolled = enrolledData.students || [];
+      setEnrolledStudents(enrolled);
+      const enrolledIds = new Set(enrolled.map(s => s.student_id));
+      const available = (allData.students || []).filter(s => !enrolledIds.has(s.student_id));
+      setAllStudents(available);
     } catch (err) {
       console.error('Error fetching data:', err);
       setError('Failed to load data');
+    } finally {
       setLoading(false);
     }
   };
 
   const handleSelectStudent = (studentId) => {
-    if (selectedStudents.includes(studentId)) {
-      setSelectedStudents(selectedStudents.filter(id => id !== studentId));
-    } else {
-      setSelectedStudents([...selectedStudents, studentId]);
-    }
+    setSelectedStudents(prev =>
+      prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]
+    );
   };
 
   const handleEnroll = async () => {
@@ -56,22 +53,31 @@ function EnrollStudents() {
       alert('Please select at least one student');
       return;
     }
-
     try {
-      const token = localStorage.getItem('token');
-      await axios.post('http://localhost:5000/api/enrollments', {
-        student_ids: selectedStudents,
-        class_id: id
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
+      await Promise.all(
+        selectedStudents.map(student_id =>
+          api('/api/enrollments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student_id, class_id: id }),
+          })
+        )
+      );
       alert('Students enrolled successfully!');
       setSelectedStudents([]);
-      fetchData(); // Refresh data
+      fetchData();
     } catch (err) {
       console.error('Error enrolling students:', err);
       alert('Failed to enroll students');
+    }
+  };
+
+  const handleUnenroll = async (studentId) => {
+    try {
+      await api(`/api/enrollments/${id}/${studentId}`, { method: 'DELETE' });
+      fetchData();
+    } catch (err) {
+      alert('Failed to unenroll student');
     }
   };
 
@@ -83,11 +89,7 @@ function EnrollStudents() {
       <div className="enroll-header">
         <div>
           <h1>Enroll Students</h1>
-          {classInfo && (
-            <p className="class-info">
-              {classInfo.subject_name} - Section {classInfo.section} ({classInfo.academic_year})
-            </p>
-          )}
+          <p className="class-info">Class ID: {id}</p>
         </div>
         <button onClick={() => navigate('/classes')} className="btn-back">
           ← Back to Classes
@@ -99,7 +101,7 @@ function EnrollStudents() {
         <div className="student-section">
           <div className="section-header">
             <h2>Available Students</h2>
-            <span className="count">{availableStudents.length} students</span>
+            <span className="count">{allStudents.length} students</span>
           </div>
 
           {selectedStudents.length > 0 && (
@@ -109,10 +111,10 @@ function EnrollStudents() {
           )}
 
           <div className="student-list">
-            {availableStudents.length === 0 ? (
+            {allStudents.length === 0 ? (
               <p className="empty">All students are already enrolled!</p>
             ) : (
-              availableStudents.map(student => (
+              allStudents.map(student => (
                 <div
                   key={student.student_id}
                   className={`student-card ${selectedStudents.includes(student.student_id) ? 'selected' : ''}`}
@@ -152,7 +154,15 @@ function EnrollStudents() {
                     <p>Roll: {student.roll_number}</p>
                     <p>{student.department} - Year {student.year}</p>
                   </div>
-                  <span className="enrolled-badge">✓ Enrolled</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="enrolled-badge">✓ Enrolled</span>
+                    <button
+                      onClick={() => handleUnenroll(student.student_id)}
+                      style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 12 }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               ))
             )}

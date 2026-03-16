@@ -1,44 +1,43 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { api } from '../api';
 import './Login.css';
 
-function Login() {
-  const [email, setEmail] = useState('');
+const ROLES = [
+  { label: 'Admin',   email: 'admin@test.com',  icon: '⚙️' },
+  { label: 'Faculty', email: 'ravi@college.com', icon: '👨🏫' },
+  { label: 'Student', email: 'hima@college.com', icon: '🎓' },
+];
+
+export default function Login() {
+  const [activeTab, setActiveTab] = useState(0);
+  const [email,    setEmail]    = useState('admin@test.com');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [error,    setError]    = useState('');
+  const [loading,  setLoading]  = useState(false);
+
+  const switchTab = (idx) => {
+    setActiveTab(idx);
+    setEmail(ROLES[idx].email);
+    setPassword('');
+    setError('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    if (!email.includes('@')) {
-      setError('Please enter a valid email');
-      return;
-    }
-
+    if (!email || !password) { setError('Please fill in all fields'); return; }
     setLoading(true);
-
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', {
-        email: email,
-        password: password
+      const res = await api('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
-
-      localStorage.setItem('token', response.data.token);
-      
-      if (rememberMe) {
-        localStorage.setItem('rememberMe', 'true');
-      }
-
+      const data = await res.json();
+      if (!res.ok) throw { response: { data } };
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
       window.location.href = '/dashboard';
-
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
       setLoading(false);
@@ -49,51 +48,58 @@ function Login() {
     <div className="login-container">
       <div className="login-box">
         <div className="login-header">
-          <div className="login-header-top">ACADEMIC MANAGEMENT</div>
+          <div className="login-header-top">Smart Attendance ERP</div>
           <h1>Welcome Back</h1>
-          <h2>Sign in to continue</h2>
+          <h2>Sign in to your account</h2>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-            />
+        <div className="login-body">
+          <div className="role-tabs">
+            {ROLES.map((r, i) => (
+              <button
+                key={r.label}
+                type="button"
+                className={`role-tab${activeTab === i ? ' active' : ''}`}
+                onClick={() => switchTab(i)}
+              >
+                {r.icon} {r.label}
+              </button>
+            ))}
           </div>
 
-          <div className="form-group">
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
-            />
+          <form onSubmit={handleSubmit}>
+            <div className="form-group">
+              <label>Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="Enter your email"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Password</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter your password"
+              />
+            </div>
+
+            {error && <div className="error-message">{error}</div>}
+
+            <button type="submit" className="login-submit-btn" disabled={loading}>
+              {loading ? 'Signing in…' : `Sign In as ${ROLES[activeTab].label}`}
+            </button>
+          </form>
+
+          <div className="login-footer">
+            Default password: <strong>password123</strong>
           </div>
-
-          <div className="form-group checkbox">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              id="remember"
-            />
-            <label htmlFor="remember">Remember me</label>
-          </div>
-
-          {error && <div className="error-message">{error}</div>}
-
-          <button type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+        </div>
       </div>
     </div>
   );
 }
-
-export default Login;
