@@ -34,12 +34,12 @@ export default function Login() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw { response: { data } };
+      if (!res.ok) throw new Error(data.error || 'Login failed. Please try again.');
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       window.location.href = '/dashboard';
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed. Please try again.');
+      setError(err.message || 'Login failed. Please try again.');
       setLoading(false);
     }
   };

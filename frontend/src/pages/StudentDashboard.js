@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { RefreshCcw } from 'lucide-react';
 import { api } from '../api';
 
-const token = () => localStorage.getItem('token');
 const user  = () => { try { return JSON.parse(localStorage.getItem('user')||'{}'); } catch { return {}; } };
 
 const COLORS = ['#6366f1','#f59e0b','#10b981','#ef4444','#8b5cf6','#06b6d4'];

@@ -1,8 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../api';
 
-const jsonHdr = () => ({});
-
 export default function FaceRegister() {
   const [students,   setStudents]   = useState([]);
   const [selected,   setSelected]   = useState(null);

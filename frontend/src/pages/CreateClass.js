@@ -7,7 +7,6 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const CreateClass = () => {
   const navigate = useNavigate();
   const user = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
-  const token = localStorage.getItem('token');
 
   const [form, setForm] = useState({ subject: '', academic_year: '', section: '', schedule: '', faculty_id: '' });
   const [days, setDays] = useState([]);

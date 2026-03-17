@@ -13,9 +13,6 @@ function EnrollStudents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const token = localStorage.getItem('token');
-  const headers = { Authorization: `Bearer ${token}` };
-
   useEffect(() => {
     fetchData();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
